@@ -1962,7 +1962,7 @@
             if(ncount == 0) then
                 ncount=i-1
             end if
-            this%xe(i) = CP%Reion%x_e(1/a-1, tau, this%xe(ncount))
+            this%xe(i) = CP%Reion%x_e(1/a-1, this%xe(ncount))
             if (CP%Accuracy%AccurateReionization .and. CP%WantDerivedParameters) then
                 this%dotmu(i)=(xe_a(i) - this%xe(i))*State%akthom/a2
 

@@ -2,12 +2,14 @@
     module Reionization
     use Precision
     use MiscUtils
+    use MathUtils
     use classes
+    use constants
     use results
     implicit none
     private
-    !This module puts smooth tanh reionization of specified mid-point (z_{re}) and width
-    !The tanh function is in the variable (1+z)**Rionization_zexp
+    !This module puts smooth asymmetric reionization of specified mid-point (z_{re})
+    !and end-point (z_{end})
 
     !Rionization_zexp=1.5 has the property that for the same z_{re}
     !the optical depth agrees with infinitely sharp model for matter domination
@@ -19,6 +21,7 @@
 
     !AL March 2008
     !AL July 2008 - added trap for setting optical depth without use_optical_depth
+    !AG modified 2022 for asymmetric reionization
 
     !See CAMB notes for further discussion: http://cosmologist.info/notes/CAMB.pdf
 
@@ -30,9 +33,8 @@
 
     type, extends(TReionizationModel) :: TTanhReionization
         logical    :: use_optical_depth = .false.
-        real(dl)   :: redshift = 10._dl
+        real(dl)   :: redshift = 0._dl
         real(dl)   :: optical_depth = 0._dl
-        real(dl)   :: delta_redshift = 0.5_dl
         real(dl)   :: fraction = TTanhReionization_DefFraction
         !Parameters for the second reionization of Helium
         logical    :: include_helium_fullreion  = .true.
@@ -41,9 +43,12 @@
         real(dl)   :: helium_redshiftstart  = 5.5_dl
         real(dl)   :: tau_solve_accuracy_boost = 1._dl
         real(dl)   :: timestep_boost =  1._dl
-        real(dl)   :: max_redshift = 50._dl
+        real(dl)   :: z_end = 0._dl
+        real(dl)   :: z_early = 20._dl
         !The rest are internal to this module.
-        real(dl), private ::  fHe, WindowVarMid, WindowVarDelta
+        real(dl), private :: reion_tol = 1d-5
+        real(dl), private ::  fHe
+        real(dl), private :: alpha = 0_dl
         class(CAMBdata), pointer :: State
     contains
     procedure :: ReadParams => TTanhReionization_ReadParams
@@ -52,7 +57,9 @@
     procedure :: get_timesteps => TTanhReionization_get_timesteps
     procedure, nopass :: SelfPointer => TTanhReionization_SelfPointer
     procedure, nopass ::  GetZreFromTau => TTanhReionization_GetZreFromTau
-    procedure, private :: SetParamsForZre => TTanhReionization_SetParamsForZre
+    procedure, nopass ::  GetTauFromXe => TTanhReionization_GetTauFromXe
+    procedure, private :: SetParamsForAlpha => TTanhReionization_SetParamsForAlpha
+    procedure, private :: SetAlphaForZre => TTanhReionization_SetAlphaForZre
     procedure, private :: zreFromOptDepth => TTanhReionization_zreFromOptDepth
     end type TTanhReionization
 
@@ -73,13 +80,14 @@
 
     xstart = PresentDefault( 0._dl, xe_recomb)
 
-    xod = (this%WindowVarMid - (1+z)**Tanh_zexp)/this%WindowVarDelta
-    if (xod > 100) then
-        tgh=1.d0
-    else
-        tgh=tanh(xod)
+    if (z < this%z_end) then
+        TTanhReionization_xe = this%fraction-xstart
+    else if (z > this%z_early) then
+        TTanhReionization_xe = xstart
+    else 
+        TTanhReionization_xe = ((this%z_early-z)/(this%z_early - this%z_end ))**(this%alpha)
+        TTanhReionization_xe = (this%fraction-xstart)*TTanhReionization_xe
     end if
-    TTanhReionization_xe =(this%fraction-xstart)*(tgh+1._dl)/2._dl+xstart
 
     if (this%include_helium_fullreion .and. z < this%helium_redshiftstart) then
 
@@ -106,8 +114,8 @@
     real(dl), intent(out):: z_start, z_Complete
 
     n_steps = nint(50 * this%timestep_boost)
-    z_start = this%redshift + this%delta_redshift*8
-    z_complete = max(0.d0,this%redshift-this%delta_redshift*8)
+    z_start = this%z_early
+    z_complete = 0.d0
 
     end subroutine TTanhReionization_get_timesteps
 
@@ -120,14 +128,13 @@
     if (this%Reionization) then
 
         this%use_optical_depth = Ini%Read_Logical('re_use_optical_depth')
-
         if (this%use_optical_depth) then
             this%optical_depth = Ini%Read_Double('re_optical_depth')
         else
             this%redshift = Ini%Read_Double('re_redshift')
+            this%z_end = Ini%Read_Double('re_zend')
         end if
 
-        call Ini%Read('re_delta_redshift',this%delta_redshift)
         call Ini%Read('re_ionization_frac',this%fraction)
         call Ini%Read('re_helium_redshift',this%helium_redshift)
         call Ini%Read('re_helium_delta_redshift',this%helium_delta_redshift)
@@ -139,13 +146,28 @@
 
     end subroutine TTanhReionization_ReadParams
 
-    subroutine TTanhReionization_SetParamsForZre(this)
+    subroutine TTanhReionization_SetParamsForAlpha(this)
     class(TTanhReionization) :: this
 
-    this%WindowVarMid = (1._dl+this%redshift)**Tanh_zexp
-    this%WindowVarDelta = Tanh_zexp*(1._dl+this%redshift)**(Tanh_zexp-1._dl)*this%delta_redshift
+    if (this%alpha < 1.) then
+        this%redshift = this%z_early
+    else
+        this%redshift = this%z_early - (this%z_early - this%z_end)/2.**(1./this%alpha)
+    end if
 
-    end subroutine TTanhReionization_SetParamsForZre
+    end subroutine TTanhReionization_SetParamsForAlpha
+
+    subroutine TTanhReionization_SetAlphaForZre(this)
+    class(TTanhReionization) :: this
+
+    this%alpha = log(1./2.) / log((this%z_early-this%redshift)/(this%z_early- this%z_end))
+    if (this%alpha <= 1) then
+        write (*,*) 'WARNING: there is an issue with your zre value:', this%redshift
+        this%alpha = 1.
+    end if
+
+    end subroutine TTanhReionization_SetAlphaForZre
+
 
     subroutine TTanhReionization_Init(this, State)
     use constants
@@ -159,6 +181,7 @@
         this%State => State
 
         this%fHe =  State%CP%YHe/(mass_ratio_He_H*(1.d0-State%CP%YHe))
+
         if (this%Reionization) then
 
             if (this%optical_depth /= 0._dl .and. .not. this%use_optical_depth) &
@@ -169,24 +192,35 @@
                 this%Reionization = .false.
             end if
 
-        end if
-
-        if (this%Reionization) then
-
-            if (this%fraction==TTanhReionization_DefFraction) &
+            if (this%fraction==TTanhReionization_DefFraction) then
                 this%fraction = 1._dl + this%fHe  !H + singly ionized He
-
-            if (this%use_optical_depth) then
-                this%redshift = 0
-                call this%zreFromOptDepth()
-                if (global_error_flag/=0) return
-                if (FeedbackLevel > 0) write(*,'("Reion redshift       =  ",f6.3)') this%redshift
             end if
 
-            call this%SetParamsForZre()
+
+            if (this%use_optical_depth) then 
+                this%redshift = 0._dl
+                this%alpha = 0._dl
+                this%z_end = 5.5_dl
+                call this%zreFromOptDepth()
+                call this%SetAlphaForZre()
+                if (global_error_flag/=0) return
+                if (FeedbackLevel > 1) then
+                    write(*,'("Reion redshift       =  ",f6.3)') this%redshift
+                    write(*,'("Reion endpoint       =  ",f6.3)') this%z_end
+                end if
+            else
+                if (this%redshift == 0._dl) write (*,*) 'WARNING: You seem to have set use_optical_depth = F but redshift = 0'
+                if (this%z_end == 0._dl) then
+                    write (*,*) 'WARNING: z_end not set. Automatically setting it to 5.5'
+                    this%z_end = 5.5_dl
+                end if
+                call this%SetAlphaForZre()
+                this%optical_depth = this%State%GetReionizationOptDepth()
+                if (FeedbackLevel > 1) write(*,'("Optical depth       =  ",f6.3)') this%optical_depth
+            end if
 
             !this is a check, agrees very well in default parameterization
-            if (FeedbackLevel > 1) write(*,'("Integrated opt depth = ",f7.4)') this%State%GetReionizationOptDepth()
+            ! if (FeedbackLevel > 1) write(*,'("Integrated opt depth = ",f7.4)') this%State%GetReionizationOptDepth()
 
         end if
     end select
@@ -198,27 +232,26 @@
 
     if (this%Reionization) then
         if (this%use_optical_depth) then
-            if (this%optical_depth<0 .or. this%optical_depth > 0.9  .or. &
+            if (this%optical_depth<0.04 .or. this%optical_depth > 0.9  .or. &
                 this%include_helium_fullreion .and. this%optical_depth<0.01) then
                 OK = .false.
                 write(*,*) 'Optical depth is strange. You have:', this%optical_depth
             end if
         else
-            if (this%redshift < 0 .or. this%Redshift +this%delta_redshift*3 > this%max_redshift .or. &
+            if (this%redshift < this%z_end .or. this%redshift > this%z_early .or. &
                 this%include_helium_fullreion .and. this%redshift < this%helium_redshift) then
                 OK = .false.
-                write(*,*) 'Reionization redshift strange. You have: ',this%Redshift
+                write(*,*) 'Reionization redshift strange. You have: ',this%redshift
             end if
         end if
         if (this%fraction/= TTanhReionization_DefFraction .and. (this%fraction < 0 .or. this%fraction > 1.5)) then
             OK = .false.
             write(*,*) 'Reionization fraction strange. You have: ',this%fraction
         end if
-        if (this%delta_redshift > 3 .or. this%delta_redshift<0.1 ) then
-            !Very narrow windows likely to cause problems in interpolation etc.
-            !Very broad likely to conflict with quasar data at z=6
+        if (this%alpha > 30 .or. this%alpha < 1.1) then
+            !Extreme values of alpha lead to similar reionization histories
             OK = .false.
-            write(*,*) 'Reionization delta_redshift is strange. You have: ',this%delta_redshift
+            write(*,*) 'Reionization alpha is strange. You have: ',this%alpha
         end if
     end if
 
@@ -229,40 +262,47 @@
     class(TTanhReionization) :: this
     real(dl) try_b, try_t
     real(dl) tau, last_top, last_bot
+    real(dl) a, b, step, criterium
     integer i
 
-    try_b = 0
-    try_t = this%max_redshift
+    criterium=0.002_dl
+    step=1._dl
+
+    !coefficients for linear relation between ln(alpha) and ln(tau) 
+    a=-18.
+    b=-52.8
+    !rough estimate of alpha for given tau to start the binary search
+    this%alpha= (this%optical_depth**a) * exp(b) !min value of tau is 0.044 so max value of alpha is about 33
+
     i=0
     do
-        i=i+1
-        this%redshift = (try_t + try_b)/2
-        call this%SetParamsForZre()
+        call this%SetParamsForAlpha() ! computes z_re for given alpha
         tau = this%State%GetReionizationOptDepth()
+        if (abs(tau - this%optical_depth) <= criterium) exit !success
 
-        if (tau > this%optical_depth) then
-            try_t = this%redshift
-            last_top = tau
-        else
-            try_b = this%redshift
-            last_bot = tau
+        if (this%alpha >= 30._dl) then
+            step=10._dl !increase the step in alpha because for large alphas a small jump in tau correponds to a large jump in tau (see alpha vs. tau plot)
+        else if (this%alpha <  10._dl) then !and reciprocally
+            step=0.5_dl
+            if (i>50) step=0.1_dl
+            if (i>100) step=0.05_dl
+            if (i>150) step=0.01_dl
+            if (i>150 .and. this%alpha <= 1.1_dl) exit !for these values a small jump in alpha is a huge jump in tau so wont converge
+        else 
+            step=1._dl
         end if
-        if (abs(try_b - try_t) < 1e-2_dl/this%tau_solve_accuracy_boost) then
-            if (try_b==0) last_bot = 0
-            if (try_t/=this%max_redshift) this%redshift  = &
-                (try_t*(this%optical_depth-last_bot) + try_b*(last_top-this%optical_depth))/(last_top-last_bot)
-            exit
+
+        if (tau>this%optical_depth) then
+            this%alpha= this%alpha + step
+        else 
+            this%alpha= this%alpha - step
         end if
-        if (i>100) call GlobalError('TTanhReionization_zreFromOptDepth: failed to converge',error_reionization)
+
+        if (i>95) write(*,*) i, criterium, step, tau, this%optical_depth, this%alpha, this%redshift
+
+        i=i+1
+
     end do
-
-    if (abs(tau - this%optical_depth) > 0.002 .and. global_error_flag==0) then
-        write (*,*) 'TTanhReionization_zreFromOptDepth: Did not converge to optical depth'
-        write (*,*) 'tau =',tau, 'optical_depth = ', this%optical_depth
-        write (*,*) try_t, try_b
-        write (*,*) '(If running a chain, have you put a constraint on tau?)'
-        call GlobalError('Reionization did not converge to optical depth',error_reionization)
-    end if
 
     end subroutine TTanhReionization_zreFromOptDepth
 
@@ -291,6 +331,38 @@
     end if
 
     end function TTanhReionization_GetZreFromTau
+
+    real(dl) function TTanhReionization_GetTauFromXe(P, zre, zend)
+    type(CAMBparams) :: P, P2
+    real(dl) zre, zend
+    integer error
+    type(CAMBdata) :: State
+
+
+    P2 = P
+
+    select type(Reion=>P2%Reion)
+    class is (TTanhReionization)
+        Reion%Reionization = .true.
+        Reion%use_optical_depth = .false.
+        Reion%redshift = zre
+        Reion%z_end = zend
+    end select
+
+
+    call State%SetParams(P2,error)
+    if (error/=0)  then
+        TTanhReionization_GetTauFromXe = -1
+    else
+        select type(Reion=>State%CP%Reion)
+        class is (TTanhReionization)
+            call Reion%SetAlphaForZre()
+            TTanhReionization_GetTauFromXe = Reion%State%GetReionizationOptDepth()
+
+        end select
+    end if
+
+    end function TTanhReionization_GetTauFromXe
 
     subroutine TTanhReionization_SelfPointer(cptr,P)
     use iso_c_binding

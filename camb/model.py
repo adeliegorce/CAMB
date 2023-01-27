@@ -412,7 +412,7 @@ class CAMBparams(F2003Class):
                       neutrino_hierarchy: Union[str, int] = 'degenerate', num_massive_neutrinos=1,
                       mnu=0.06, nnu=constants.default_nnu, YHe: Optional[float] = None, meffsterile=0.0,
                       standard_neutrino_neff=constants.default_nnu, TCMB=constants.COBE_CMBTemp,
-                      tau: Optional[float] = None, zrei: Optional[float] = None, deltazrei: Optional[float] = None,
+                      tau: Optional[float] = None, zrei: Optional[float] = None, zend: Optional[float] = None,
                       Alens=1.0, bbn_predictor: Union[None, str, bbn.BBNPredictor] = None, theta_H0_range=(10, 100)):
         r"""
         Sets cosmological parameters in terms of physical densities and parameters (e.g. as used in Planck analyses).
@@ -454,8 +454,8 @@ class CAMBparams(F2003Class):
                 heating of neutrinos at electron-positron annihilation and QED effects)
         :param TCMB: CMB temperature (in Kelvin)
         :param tau: optical depth; if None and zrei is None, current Reion settings are not changed
-        :param zrei: reionization mid-point optical depth (set tau=None to use this)
-        :param deltazrei: redshift width of reionization; if None, uses default
+        :param zrei: reionization mid-point (set tau=None to use this)
+        :param zend: endpoint of reionization; if None, uses default
         :param Alens: (non-physical) scaling of the lensing potential compared to prediction
         :param bbn_predictor: :class:`.bbn.BBNPredictor` instance used to get YHe from BBN consistency if YHe is None,
          or name of a BBN predictor class, or file name of an interpolation table
@@ -617,6 +617,9 @@ class CAMBparams(F2003Class):
 
     def get_zre(self):
         return self.Reion.get_zre(self)
+        
+    def get_tau(self):
+        return self.Reion.get_tau(self)
 
     # alias consistent with input parameter name
     get_zrei = get_zre
