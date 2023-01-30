@@ -67,13 +67,13 @@
     contains
 
 
-    function TTanhReionization_xe(this, z, xe_recomb)
+    function TTanhReionization_xe(this, z, tau, xe_recomb)
     !a and time tau and redundant, both provided for convenience
     !xe_recomb is xe(tau_start) from recombination (typically very small, ~2e-4)
     !xe should map smoothly onto xe_recomb
     class(TTanhReionization) :: this
     real(dl), intent(in) :: z
-    real(dl), intent(in), optional :: xe_recomb
+    real(dl), intent(in), optional :: tau, xe_recomb
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
@@ -196,6 +196,7 @@
                 this%fraction = 1._dl + this%fHe  !H + singly ionized He
             end if
 
+
             if (this%use_optical_depth) then 
                 this%redshift = 0._dl
                 this%alpha = 0._dl
@@ -297,7 +298,7 @@
             this%alpha= this%alpha - step
         end if
 
-        ! if (i>95) 
+        ! if (i>95) write(*,*) i, criterium, step, tau, this%optical_depth, this%alpha, this%redshift
         write(*,*) i, criterium, step, tau, this%optical_depth, this%alpha, this%redshift
 
         i=i+1
