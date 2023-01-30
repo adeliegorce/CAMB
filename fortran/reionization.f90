@@ -77,8 +77,7 @@
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
-    write (*,*) 'test', tau, xe_recomb
-
+    
     xstart = PresentDefault( 0._dl, xe_recomb)
 
     if (z < this%z_end) then
