@@ -73,7 +73,7 @@
     !xe should map smoothly onto xe_recomb
     class(TTanhReionization) :: this
     real(dl), intent(in) :: z
-    real(dl), intent(in), optional :: xe_recomb
+    real(dl), intent(in), optional :: xe_recomb, tau
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
