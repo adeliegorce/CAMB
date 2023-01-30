@@ -1208,6 +1208,7 @@
     real(dl) :: reion_doptdepth_dz
     real(dl), intent(in) :: z
 
+    write(*, *) 'test', z, this%CP%Reion%x_e(z)
     reion_doptdepth_dz = this%CP%Reion%x_e(z)*this%akthom*dtauda(this,1._dl/(1._dl+z))
 
     end function reion_doptdepth_dz
