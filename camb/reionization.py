@@ -27,7 +27,7 @@ class TanhReionization(ReionizationModel):
         ("helium_redshiftstart", c_double, "Include second helium reionizatio below this redshift"),
         ("tau_solve_accuracy_boost", c_double, "Accuracy boosting parameter for solving for z_re from tau"),
         ("timestep_boost", c_double, "Accuracy boosting parameter for the minimum number of time sampling steps through reionization"),
-        ("z_end", c_double, "Reionization endpoint if use_optical_depth-False"),
+        ("z_end", c_double, "Reionization endpoint if use_optical_depth=False"),
         ("z_early", c_double, "Maxmimum redshift allowed when mapping tau into reionization redshift")]
 
     _fortran_class_module_ = 'Reionization'
@@ -37,6 +37,20 @@ class TanhReionization(ReionizationModel):
         ('GetZreFromTau', [c_void_p, POINTER(c_double)], c_double, {"nopass": True}),
         ('GetTauFromXe', [c_void_p, POINTER(c_double)], c_double, {"nopass": True})
         ]
+
+    def set_zrei(self, zrei, zend=None):
+        """
+        Set the mid-point reionization redshift
+
+        :param zrei: mid-point redshift
+        :param zend:  end-point redshif
+        :return:  self
+        """
+        self.use_optical_depth = False
+        self.redshift = zrei
+        if z_end is not None:
+            self.z_end = zend
+        return self
 
     def set_tau(self, tau):
         """
