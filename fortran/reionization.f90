@@ -77,7 +77,7 @@
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
-    write(*, *) 'test2', xe_recomb, tau
+    write (*,*) 'test', tau, xe_recomb
 
     xstart = PresentDefault( 0._dl, xe_recomb)
 
