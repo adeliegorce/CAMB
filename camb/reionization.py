@@ -48,7 +48,7 @@ class TanhReionization(ReionizationModel):
         """
         self.use_optical_depth = False
         self.redshift = zrei
-        if z_end is not None:
+        if zend is not None:
             self.z_end = zend
         return self
 
