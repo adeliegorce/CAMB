@@ -67,7 +67,7 @@
     contains
 
 
-    function TTanhReionization_xe(this, z, xe_recomb)
+    function TTanhReionization_xe(this, z, xe_recomb, tau)
     !a and time tau and redundant, both provided for convenience
     !xe_recomb is xe(tau_start) from recombination (typically very small, ~2e-4)
     !xe should map smoothly onto xe_recomb
@@ -77,6 +77,7 @@
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
+    write(*, *) 'test2', xe_recomb, tau
 
     xstart = PresentDefault( 0._dl, xe_recomb)
 
