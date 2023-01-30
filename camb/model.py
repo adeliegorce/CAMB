@@ -523,9 +523,9 @@ class CAMBparams(F2003Class):
                 raise CAMBError('Cannot set both tau and zrei')
             self.Reion.set_tau(tau)
         elif zrei is not None:
-            if zend is not None:
-                assert zend < zrei, raise CAMBValueError('Reionization end-point zend '\
-                    'must be smaller than mid-point zrei.')
+            if zend is not None and (zend >= zrei): 
+                raise CAMBValueError('Reionization end-point zend must be smaller than'\
+                    f'mid-point zrei. Have zend = {zend:.1f} and zrei = {zrei:.1f}')
             self.Reion.set_zrei(zrei, zend=zend)
 
         return self
