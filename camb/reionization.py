@@ -92,5 +92,12 @@ class TanhReionization(ReionizationModel):
         else:
             from .camb import CAMBparams
             assert isinstance(params, CAMBparams)
-            return self.f_GetTauFromXe(byref(params), c_double(zre or self.redshift), c_double(zend or self.z_end))
+            if zend is None:
+                zend = self.z_end
+            if zre is None:
+                zre = self.redshift
+            param_reion = [zre, zend]
+            param_reion_ptr = (c_double * 2)(*param_reion)
+            return self.f_GetTauFromXe(byref(params), param_reion_ptr)
+
 

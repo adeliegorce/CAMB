@@ -29,6 +29,7 @@
     !if -1 set from YHe assuming Hydrogen and first ionization of Helium follow each other
 
     real(dl) :: Tanh_zexp = 1.5_dl
+    integer :: FeedbackLevel = 0 !if > 1 print out useful information about the model
 
 
     type, extends(TReionizationModel) :: TTanhReionization
@@ -209,8 +210,8 @@
                     write(*,'("Reion endpoint       =  ",f6.3)') this%z_end
                 end if
             else
-                if (this%redshift == 0._dl) write (*,*) 'WARNING: You seem to have set use_optical_depth = F but redshift = 0'
-                if (this%z_end == 0._dl) then
+                if (this%redshift < 0.0001_dl) write (*,*) 'WARNING: You seem to have set use_optical_depth = F but redshift = 0'
+                if (this%z_end < 0.0001_dl) then
                     write (*,*) 'WARNING: z_end not set. Automatically setting it to 5.5'
                     this%z_end = 5.5_dl
                 end if
@@ -278,6 +279,7 @@
     do
         call this%SetParamsForAlpha() ! computes z_re for given alpha
         tau = this%State%GetReionizationOptDepth()
+
         if (abs(tau - this%optical_depth) <= criterium) exit !success
 
         if (this%alpha >= 30._dl) then
@@ -299,7 +301,6 @@
         end if
 
         ! if (i>95) write(*,*) i, criterium, step, tau, this%optical_depth, this%alpha, this%redshift
-        write(*,*) i, criterium, step, tau, this%optical_depth, this%alpha, this%redshift
 
         i=i+1
 
@@ -333,15 +334,17 @@
 
     end function TTanhReionization_GetZreFromTau
 
-    real(dl) function TTanhReionization_GetTauFromXe(P, zre, zend)
+    real(dl) function TTanhReionization_GetTauFromXe(P, param_reion)
     type(CAMBparams) :: P, P2
+    real(dl), dimension(2) :: param_reion
     real(dl) zre, zend
     integer error
     type(CAMBdata) :: State
 
 
     P2 = P
-
+    zre = param_reion(1)
+    zend = param_reion(2)
     select type(Reion=>P2%Reion)
     class is (TTanhReionization)
         Reion%Reionization = .true.
@@ -349,8 +352,6 @@
         Reion%redshift = zre
         Reion%z_end = zend
     end select
-
-
     call State%SetParams(P2,error)
     if (error/=0)  then
         TTanhReionization_GetTauFromXe = -1
