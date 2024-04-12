@@ -83,7 +83,7 @@ def get_age(params):
     return CAMB_GetAge(byref(params))
 
 
-def get_zre_from_tau(params, tau):
+def get_zre(params, tau):
     """
     Get reionization redshift given optical depth tau
 
@@ -92,6 +92,17 @@ def get_zre_from_tau(params, tau):
     :return: reionization redshift (or negative number if error)
     """
     return params.Reion.get_zre(params, tau)
+
+
+def get_tau(params, zre, dz):
+    """
+    Get reionization redshift given optical depth tau
+
+    :param params: :class:`.model.CAMBparams` instance
+    :param tau: optical depth
+    :return: reionization redshift (or negative number if error)
+    """
+    return params.Reion.get_tau(params, zre, dz)
 
 
 def set_params(cp=None, verbose=False, **params):

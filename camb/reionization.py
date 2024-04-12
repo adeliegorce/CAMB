@@ -17,6 +17,8 @@ class BaseTauWithHeReionization(ReionizationModel):
     _fields_ = [
         ("use_optical_depth", c_bool, "Whether to use the optical depth or redshift paramters"),
         ("redshift", c_double, "Reionization redshift (xe=0.5) if use_optical_depth=False"),
+        ("z_end", c_double, "Reionization endpoint if use_optical_depth=False"),
+        ("dz", c_double, "Reionization duration (zre-zend)"),
         ("optical_depth", c_double, "Optical depth if use_optical_depth=True"),
         ("fraction", c_double,
          "Reionization fraction when complete, or -1 for full ionization of hydrogen and first ionization of helium."),
@@ -36,8 +38,11 @@ class BaseTauWithHeReionization(ReionizationModel):
     _fortran_class_module_ = 'Reionization'
     _fortran_class_name_ = 'TBaseTauWithHeReionization'
 
-    _methods_ = [('GetZreFromTau', [c_void_p, POINTER(c_double)], c_double, {"nopass": True})]
-
+    _methods_ = [
+        ('GetZreFromTau', [c_void_p, POINTER(c_double)], c_double, {"nopass": True}),
+        ('GetTauFromXe', [c_void_p, POINTER(c_double)], c_double, {"nopass": True})
+        ]
+    
     def get_zre(self, params, tau=None):
         """
         Get the midpoint redshift of reionization.
@@ -53,16 +58,41 @@ class BaseTauWithHeReionization(ReionizationModel):
         else:
             return self.redshift
 
-    def set_zrei(self, zrei):
+    def set_zrei(self, zrei, dz=None):
         """
         Set the mid-point reionization redshift
 
         :param zrei: mid-point redshift
-        :return: self
+        :param dz:  reion duration
+        :return:  self
         """
         self.use_optical_depth = False
         self.redshift = zrei
+        if dz is not None:
+            self.dz = dz
         return self
+
+    def get_tau(self, params, zre=None, dz=None):
+        """
+        Get the reionization optical depth.
+
+        :param params: :class:`.model.CAMBparams` instance with cosmological parameters
+        :param zre: if set, calculate the optical depth for zre, otherwise uses curently set parameters
+        :param dz: if set, calculate the optical depth for dz, otherwise uses curently set parameters
+        :return: reionization optical depth
+        """
+        if self.use_optical_depth:
+            return self.optical_depth
+        else:
+            from .camb import CAMBparams
+            assert isinstance(params, CAMBparams)
+            if dz is None:
+                dz = self.dz
+            if zre is None:
+                zre = self.redshift
+            param_reion = [zre, dz]
+            param_reion_ptr = (c_double * 2)(*param_reion)
+            return self.f_GetTauFromXe(byref(params), param_reion_ptr)
 
     def set_tau(self, tau):
         """
@@ -82,19 +112,12 @@ class TanhReionization(BaseTauWithHeReionization):
     This default (unphysical) tanh x_e parameterization is described in
     Appendix B of `arXiv:0804.3865 <https://arxiv.org/abs/0804.3865>`_
     """
-    _fields_ = [
-        ("delta_redshift", c_double, "Duration of reionization")]
 
     _fortran_class_name_ = 'TTanhReionization'
 
-    def set_extra_params(self, deltazrei=None):
-        """
-        Set extra parameters (not tau, or zrei)
-
-        :param deltazrei: delta z for reionization
-        """
-        if deltazrei is not None:
-            self.delta_redshift = deltazrei
+    def set_extra_params(self):
+        
+        self.z_end = self.redshift - self.dz
 
 
 @fortran_class
@@ -105,13 +128,13 @@ class ExpReionization(BaseTauWithHeReionization):
         Similar to e.g. arXiv:1509.02785, arXiv:2006.16828, but not attempting to fit shape near x_e~1 at z<6.1
     """
     _fields_ = [
-        ("reion_redshift_complete", c_double, "end of reionization"),
+        # ("reion_redshift_complete", c_double, "end of reionization"),
         ("reion_exp_smooth_width", c_double, "redshift scale to smooth exponential"),
         ("reion_exp_power", c_double, "power in exponential, exp(-lambda(z-redshift_complete)^exp_power)")]
 
     _fortran_class_name_ = 'TExpReionization'
 
-    def set_extra_params(self, reion_redshift_complete=None, reion_exp_power=None, reion_exp_smooth_width=None):
+    def set_extra_params(self, reion_exp_power=None, reion_exp_smooth_width=None):
         """
         Set extra parameters (not tau, or zrei)
 
@@ -119,9 +142,7 @@ class ExpReionization(BaseTauWithHeReionization):
         :param reion_exp_power: power in exponential decay with redshift
         :param reion_exp_smooth_width: smoothing parameter to keep derivative smooth
         """
-
-        if reion_redshift_complete is not None:
-            self.reion_redshift_complete = reion_redshift_complete
+        self.z_end = self.redshift - self.dz
         if reion_exp_power is not None:
             self.reion_exp_power = reion_exp_power
         if reion_exp_smooth_width is not None:

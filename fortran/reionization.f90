@@ -2,7 +2,9 @@
     module Reionization
     use Precision
     use MiscUtils
+    use MathUtils
     use classes
+    use constants
     use results
     implicit none
     private
@@ -34,7 +36,9 @@
         ! Parameterization that can take tau as an input, using redshift as a one-parameter mapping to tau
         ! includes simple tanh fitting of second reionization of helium
         logical    :: use_optical_depth = .false.
-        real(dl)   :: redshift = 10._dl
+        real(dl)   :: redshift = 7.5_dl
+        real(dl)   :: z_end = 5._dl
+        real(dl)   :: dz = 1._dl
         real(dl)   :: optical_depth = 0._dl
         real(dl)   :: fraction = Reionization_DefFraction
         !Parameters for the second reionization of Helium
@@ -48,11 +52,13 @@
         real(dl)   :: min_redshift = 0._dl
         !The rest are internal to this module.
         real(dl), private ::  fHe
-        class(CAMBdata), pointer :: State
+        real(dl), private :: reion_tol = 0.1
+    class(CAMBdata), pointer :: State
     contains
     procedure :: ReadParams => TBaseTauWithHeReionization_ReadParams
     procedure :: Init => TBaseTauWithHeReionization_Init
     procedure, nopass ::  GetZreFromTau => TBaseTauWithHeReionization_GetZreFromTau
+    procedure, nopass ::  GetTauFromXe => TBaseTauWithHeReionization_GetTauFromXe
     procedure, private :: zreFromOptDepth => TBaseTauWithHeReionization_zreFromOptDepth
     procedure :: SecondHelium_xe => TBaseTauWithHeReionization_SecondHelium_xe
     procedure :: SetParamsForZre => TBaseTauWithHeReionization_SetParamsForZre
@@ -60,7 +66,7 @@
     end type TBaseTauWithHeReionization
 
     type, extends(TBaseTauWithHeReionization) :: TTanhReionization
-        real(dl)   :: delta_redshift = 0.5_dl
+        ! real(dl)   :: delta_redshift = 0.5_dl
         !The rest are internal to this module.
         real(dl), private ::  WindowVarMid, WindowVarDelta
     contains
@@ -76,14 +82,15 @@
         ! An ionization fraction that decreases exponentially at high z, saturating to fully inionized at fixed redshift.
         ! This model has a minimum non-zero tau
         ! Similar to e.g.  arXiv:1509.02785, arXiv:2006.16828
-        real(dl)   :: reion_redshift_complete = 6.1_dl
-        real(dl)   :: reion_exp_smooth_width = 0.02_dl !modifies expential at reion_redshift_complete so derivatives continuous
-        real(dl)   :: reion_exp_power = 1._dl  !scaling propto exp(-lambda (z-reion_redshift_complete)**reion_exp_power) at high z
+        ! real(dl)   :: reion_redshift_complete = 6.1_dl
+        real(dl)   :: reion_exp_smooth_width = 0.02_dl !modifies expential at z_end so derivatives continuous
+        real(dl)   :: reion_exp_power = 1._dl  !scaling propto exp(-lambda (z-z_end)**reion_exp_power) at high z
     contains
     procedure :: x_e => TExpReionization_xe
     procedure :: get_timesteps => TExpReionization_get_timesteps
     procedure :: Init => TExpReionization_Init
     procedure :: ReadParams => TExpReionization_ReadParams
+    procedure :: SetParamsForZre => TExpReionization_SetParamsForZre
     procedure, nopass :: SelfPointer => TExpReionization_SelfPointer
     end type TExpReionization
 
@@ -125,12 +132,11 @@
                 if (FeedbackLevel > 0) write(*,'("Reion redshift       =  ",f6.3)') this%redshift
             end if
 
-            call this%SetParamsForZre()
-
             !this is a check, agrees very well in default parameterization
             if (FeedbackLevel > 1) write(*,'("Integrated opt depth = ",f7.4)') this%State%GetReionizationOptDepth()
 
         end if
+        call this%SetParamsForZre()
     end select
     end subroutine TBaseTauWithHeReionization_Init
 
@@ -172,6 +178,7 @@
             this%redshift = Ini%Read_Double('re_redshift')
         end if
 
+        this%dz = Ini%Read_Double('re_dz', 1.0_dl)
         call Ini%Read('re_ionization_frac',this%fraction)
         call Ini%Read('re_helium_redshift',this%helium_redshift)
         call Ini%Read('re_helium_delta_redshift',this%helium_delta_redshift)
@@ -199,6 +206,12 @@
                 this%include_helium_fullreion .and. this%optical_depth<0.01) then
                 OK = .false.
                 write(*,*) 'Optical depth is strange. You have:', this%optical_depth
+            end if
+        else
+            if (this%dz < this%reion_tol .or. this%include_helium_fullreion &
+                .and. this%redshift < this%helium_redshift) then
+                OK = .false.
+                write(*,*) 'Reionization redshift strange. You have: ',this%redshift
             end if
         end if
         if (this%fraction/= Reionization_DefFraction .and. (this%fraction < 0 .or. this%fraction > 1.5)) then
@@ -277,19 +290,52 @@
 
     end function  TBaseTauWithHeReionization_GetZreFromTau
 
-    function TTanhReionization_xe(this, z, tau, xe_recomb)
+    real(dl) function TBaseTauWithHeReionization_GetTauFromXe(P, zre, dz)
+    type(CAMBparams) :: P, P2
+    real(dl) zre, dz  
+    integer error
+    type(CAMBdata) :: State
+
+    P2 = P
+
+    select type(Reion=>P2%Reion)
+    class is (TBaseTauWithHeReionization)
+        Reion%Reionization = .true.
+        Reion%use_optical_depth = .false.
+        Reion%redshift = zre
+        Reion%dz = dz
+    end select
+    call State%SetParams(P2,error)
+    if (error/=0)  then
+        TBaseTauWithHeReionization_GetTauFromXe = -1
+    else
+        select type(Reion=>State%CP%Reion)
+        class is (TBaseTauWithHeReionization)
+            call Reion%SetParamsForZre()
+            if (Reion%dz<Reion%reion_tol) then
+                TBaseTauWithHeReionization_GetTauFromXe = -1
+            else
+                TBaseTauWithHeReionization_GetTauFromXe = Reion%State%GetReionizationOptDepth()
+            end if
+
+        end select
+    end if
+
+    end function TBaseTauWithHeReionization_GetTauFromXe
+
+    function TTanhReionization_xe(this, z, zre, dz, xe_recomb)
     !a and time tau are redundant, both provided for convenience
     !xe_recomb is xe(tau_start) from recombination (typically very small, ~2e-4)
     !xe should map smoothly onto xe_recomb
     class(TTanhReionization) :: this
     real(dl), intent(in) :: z
-    real(dl), intent(in), optional :: tau, xe_recomb
+    real(dl), intent(in), optional :: zre, dz, xe_recomb
     real(dl) TTanhReionization_xe
     real(dl) tgh, xod
     real(dl) xstart
 
     xstart = PresentDefault(0._dl, xe_recomb)
-
+    call this%SetParamsForZre()
     xod = (this%WindowVarMid - (1+z)**Tanh_zexp)/this%WindowVarDelta
     if (xod > 100) then
         tgh=1.d0
@@ -310,16 +356,17 @@
     real(dl), intent(out):: z_start, z_Complete
 
     n_steps = nint(50 * this%timestep_boost)
-    z_start = this%redshift + this%delta_redshift*8
-    z_complete = max(0.d0,this%redshift-this%delta_redshift*8)
+    z_start = this%redshift + this%dz*8
+    z_complete = max(0.d0,this%redshift-this%dz*8)
 
     end subroutine TTanhReionization_get_timesteps
 
     subroutine TTanhReionization_SetParamsForZre(this)
     class(TTanhReionization) :: this
 
+    this%z_end = this%redshift - this%dz
     this%WindowVarMid = (1._dl+this%redshift)**Tanh_zexp
-    this%WindowVarDelta = Tanh_zexp*(1._dl+this%redshift)**(Tanh_zexp-1._dl)*this%delta_redshift
+    this%WindowVarDelta = Tanh_zexp*(1._dl+this%redshift)**(Tanh_zexp-1._dl)*this%dz
 
     end subroutine TTanhReionization_SetParamsForZre
 
@@ -329,7 +376,7 @@
     class(TIniFile), intent(in) :: Ini
 
     call this%TBaseTauWithHeReionization%ReadParams(Ini)
-    if (this%Reionization) call Ini%Read('re_delta_redshift',this%delta_redshift)
+    this%z_end = this%redshift - this%dz
 
     end subroutine TTanhReionization_ReadParams
 
@@ -340,18 +387,18 @@
     call this%TBaseTauWithHeReionization%Validate(OK)
     if (this%Reionization) then
         if (.not. this%use_optical_depth) then
-            if (this%redshift < 0 .or. this%Redshift +this%delta_redshift*3 > this%max_redshift .or. &
+            if (this%redshift < 0 .or. this%Redshift +this%dz*3 > this%max_redshift .or. &
                 this%include_helium_fullreion .and. this%redshift < this%helium_redshift) then
                 OK = .false.
                 write(*,*) 'Reionization redshift strange. You have: ',this%Redshift
             end if
         end if
-        if (this%delta_redshift > 3 .or. this%delta_redshift<0.1 ) then
-            !Very narrow windows likely to cause problems in interpolation etc.
-            !Very broad likely to conflict with quasar data at z=6
-            OK = .false.
-            write(*,*) 'Reionization delta_redshift is strange. You have: ',this%delta_redshift
-        end if
+        ! if (this%dz > 3 .or. this%dz<0.1 ) then
+        !     !Very narrow windows likely to cause problems in interpolation etc.
+        !     !Very broad likely to conflict with quasar data at z=6
+        !     OK = .false.
+        !     write(*,*) 'Reionization dz is strange. You have: ',this%dz
+        ! end if
     end if
 
     end subroutine TTanhReionization_Validate
@@ -371,30 +418,30 @@
     class(TExpReionization) :: this
     class(TCAMBdata), target :: State
 
-    this%min_redshift = this%reion_redshift_complete
+    this%min_redshift = this%z_end
     call this%TBaseTauWithHeReionization%Init(State)
 
     end subroutine TExpReionization_Init
 
 
-    function TExpReionization_xe(this, z, tau, xe_recomb)
+    function TExpReionization_xe(this, z, zre, dz, xe_recomb)
     !a and time tau are redundant, both provided for convenience
     !xe_recomb is xe(tau_start) from recombination (typically very small, ~2e-4)
     !xe should map smoothly onto xe_recomb
     class(TExpReionization) :: this
     real(dl), intent(in) :: z
-    real(dl), intent(in), optional :: tau, xe_recomb
+    real(dl), intent(in), optional :: zre, dz, xe_recomb
     real(dl) TExpReionization_xe
     real(dl) lam, xstart, smoothing
 
     xstart = PresentDefault(0._dl, xe_recomb)
 
-    if (z <= this%reion_redshift_complete + 1d-6) then
+    if (z <= this%z_end + 1d-6) then
         TExpReionization_xe = this%fraction
     else
-        lam = -log(0.5)/(this%redshift - this%reion_redshift_complete)**this%reion_exp_power
-        smoothing = 1/(1+this%reion_exp_smooth_width/(z-this%reion_redshift_complete)**2)
-        TExpReionization_xe = exp(-lam*(z-this%reion_redshift_complete)**this%reion_exp_power*smoothing) &
+        lam = -log(0.5)/(this%redshift - this%z_end)**this%reion_exp_power
+        smoothing = 1/(1+this%reion_exp_smooth_width/(z-this%z_end)**2)
+        TExpReionization_xe = exp(-lam*(z-this%z_end)**this%reion_exp_power*smoothing) &
             *(this%fraction-xstart) + xstart
     end if
 
@@ -412,11 +459,18 @@
     real(dl) lam
 
     n_steps = nint(50 * this%timestep_boost)
-    lam = -log(0.5)/(this%redshift - this%reion_redshift_complete)**this%reion_exp_power
-    z_start = this%reion_redshift_complete  + (-log(0.0001)/lam)**(1/this%reion_exp_power)
-    z_complete = this%reion_redshift_complete
+    lam = -log(0.5)/(this%redshift - this%z_end)**this%reion_exp_power
+    z_start = this%z_end  + (-log(0.0001)/lam)**(1/this%reion_exp_power)
+    z_complete = this%z_end
 
     end subroutine TExpReionization_get_timesteps
+
+    subroutine TExpReionization_SetParamsForZre(this)
+    class(TExpReionization) :: this
+
+    this%z_end = this%redshift - this%dz
+
+    end subroutine TExpReionization_SetParamsForZre
 
     subroutine TExpReionization_ReadParams(this, Ini)
     use IniObjects
@@ -425,9 +479,10 @@
 
     call this%TBaseTauWithHeReionization%ReadParams(Ini)
     if (this%Reionization)then
-        call Ini%Read('reion_redshift_complete',this%reion_redshift_complete)
-        call Ini%Read('reion_exp_smooth_width',this%reion_exp_smooth_width)
-        call Ini%Read('reion_exp_power',this%reion_exp_power)
+        ! call Ini%Read('reion_redshift_complete',this%reion_redshift_complete)
+        call Ini%Read('reion_exp_smooth_width', this%reion_exp_smooth_width)
+        call Ini%Read('reion_exp_power', this%reion_exp_power)
+        this%z_end = this%redshift - this%dz
     end if
 
     end subroutine TExpReionization_ReadParams

@@ -310,13 +310,13 @@
     TRecombinationModel_Get_Saha_z = 0
     end function
 
-    function TReionizationModel_xe(this, z, tau, xe_recomb)
+    function TReionizationModel_xe(this, z, zre, dz, xe_recomb)
     !a and time tau and redundant, both provided for convenience
     !xe_recomb is xe(tau_start) from recombination (typically very small, ~2e-4)
     !xe should map smoothly onto xe_recomb
     class(TReionizationModel) :: this
     real(dl), intent(in) :: z
-    real(dl), intent(in), optional :: tau, xe_recomb
+    real(dl), intent(in), optional :: zre, dz, xe_recomb
     real(dl) TReionizationModel_xe
 
     call MpiStop('TReionizationModel_xe not implemented')

@@ -266,6 +266,7 @@
     procedure :: Free => CAMBdata_Free
     procedure :: grho_no_de
     procedure :: GetReionizationOptDepth
+    procedure :: GetReionizationOptDepthAtZ
     procedure :: rofChi
     procedure :: cosfunc
     procedure :: tanfunc
@@ -1243,6 +1244,19 @@
 
     end function GetReionizationOptDepth
 
+    function GetReionizationOptDepthAtZ(this, z)
+    class(CAMBdata) :: this
+    real(dl) :: z
+    real(dl) GetReionizationOptDepthAtZ
+    integer n
+    real(dl) zstart, zend
+
+    call this%CP%Reion%get_timesteps(n, zstart, zend)
+    GetReionizationOptDepthAtZ = Integrate_Romberg(this, reion_doptdepth_dz,z,zstart,&
+        1d-5/this%CP%Accuracy%AccuracyBoost)
+
+    end function GetReionizationOptDepthAtZ
+
     real(dl) function binary_search(this,func, goal, x1, x2, tol, widex1, widex2)
     !This is about twice as inefficient as Brent
     class(CAMBdata) :: this
@@ -1963,7 +1977,7 @@
             if(ncount == 0) then
                 ncount=i-1
             end if
-            this%xe(i) = CP%Reion%x_e(1/a-1, tau, this%xe(ncount))
+            this%xe(i) = CP%Reion%x_e(1/a-1, 0._dl, 0._dl, this%xe(ncount))
             if (CP%Accuracy%AccurateReionization .and. CP%WantDerivedParameters) then
                 this%dotmu(i)=(xe_a(i) - this%xe(i))*State%akthom/a2
 
