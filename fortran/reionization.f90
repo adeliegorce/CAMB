@@ -52,7 +52,7 @@
         real(dl)   :: min_redshift = 0._dl
         !The rest are internal to this module.
         real(dl), private ::  fHe
-        real(dl), private :: reion_tol = 0.1
+        real(dl), private ::  reion_tol = 0.1
     class(CAMBdata), pointer :: State
     contains
     procedure :: ReadParams => TBaseTauWithHeReionization_ReadParams
@@ -290,13 +290,16 @@
 
     end function  TBaseTauWithHeReionization_GetZreFromTau
 
-    real(dl) function TBaseTauWithHeReionization_GetTauFromXe(P, zre, dz)
+    real(dl) function TBaseTauWithHeReionization_GetTauFromXe(P, param_reion)
     type(CAMBparams) :: P, P2
+    real(dl), dimension(2) :: param_reion
     real(dl) zre, dz  
     integer error
     type(CAMBdata) :: State
 
     P2 = P
+    zre = param_reion(1)
+    dz = param_reion(2)
 
     select type(Reion=>P2%Reion)
     class is (TBaseTauWithHeReionization)
@@ -304,7 +307,10 @@
         Reion%use_optical_depth = .false.
         Reion%redshift = zre
         Reion%dz = dz
+        Reion%z_end = zre - dz
     end select
+
+
     call State%SetParams(P2,error)
     if (error/=0)  then
         TBaseTauWithHeReionization_GetTauFromXe = -1

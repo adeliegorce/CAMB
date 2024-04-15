@@ -70,6 +70,7 @@ class BaseTauWithHeReionization(ReionizationModel):
         self.redshift = zrei
         if dz is not None:
             self.dz = dz
+            self.z_end = self.redshift - self.dz
         return self
 
     def get_tau(self, params, zre=None, dz=None):
